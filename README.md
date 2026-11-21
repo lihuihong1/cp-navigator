@@ -57,6 +57,24 @@
 
 查询失败时按原因分五类提示：**信息不全 / 用户名有误 / 查询过于频繁 / 网络异常 / 接口失效**。
 
+## 获取源码
+
+```bash
+git clone https://github.com/lihuihong1/cp-navigator.git
+cd cp-navigator
+
+# 看有哪些发布版
+git tag --sort=-v:refname | head -5
+
+# 停在某个发布版（推荐：能复现对应 APK 的源码）
+git checkout v1.6.2
+
+# 或者跟着最新开发进度
+git pull origin main
+```
+
+不想装 git：在 [Releases](../../releases) 里展开最新版本，附件 `oj-helper-<版本>-src.zip` 就是该版本的源码，解压即可。它比 GitHub 自动生成的 `Source code (zip)` 多一个 `src/com/ojhelper/BuildStamp.java` —— 自动生成的包缺这个类，直接编译会报「找不到符号: 类 BuildStamp」。
+
 ## 自己构建
 
 仓库里只有源码，**不含 Gradle 工程、不含构建脚本**。目录就是标准 Android 工程的结构：
