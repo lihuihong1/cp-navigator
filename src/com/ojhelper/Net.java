@@ -44,11 +44,19 @@ final class Net {
      * @param charset 为空时按响应头/UTF-8 解码；HDU 等站点需显式传 GB18030。
      */
     static String get(String url, String referer, String charset) throws M.OjError {
-        return request(url, referer, null, null, charset);
+        return request(url, referer, null, null, charset, null);
+    }
+
+    /**
+     * 带额外请求头的 GET，kv 形如 {"Header", "Value", ...}。
+     * 洛谷要同时带 x-lentille-request 与 x-requested-with 才返回 JSON。
+     */
+    static String getWith(String url, String referer, String[] kv) throws M.OjError {
+        return request(url, referer, null, null, null, kv);
     }
 
     static String postJson(String url, String body, String referer) throws M.OjError {
-        return request(url, referer, body, "application/json", null);
+        return request(url, referer, body, "application/json", null, null);
     }
 
     /** 一次请求的结果：要么是正文，要么是下一跳地址。 */
@@ -58,14 +66,14 @@ final class Net {
     }
 
     private static String request(String url, String referer, String body,
-                                  String contentType, String charset) throws M.OjError {
+                                  String contentType, String charset, String[] kv) throws M.OjError {
         init();
         String cur = url;
         String ref = referer;
         String payload = body;
 
         for (int hop = 0; hop <= MAX_HOPS; hop++) {
-            Hop h = once(cur, ref, payload, contentType, charset);
+            Hop h = once(cur, ref, payload, contentType, charset, kv);
             if (h.location == null) return h.text;
             ref = cur;
             cur = resolve(cur, h.location);
@@ -75,7 +83,7 @@ final class Net {
     }
 
     private static Hop once(String url, String referer, String body, String contentType,
-                            String charset) throws M.OjError {
+                            String charset, String[] kv) throws M.OjError {
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(url).openConnection();
@@ -91,6 +99,9 @@ final class Net {
             String cookie = cookieFor(url);
             if (cookie != null && !cookie.isEmpty()) c.setRequestProperty("Cookie", cookie);
             if (referer != null) c.setRequestProperty("Referer", referer);
+            if (kv != null) {
+                for (int i = 0; i + 1 < kv.length; i += 2) c.setRequestProperty(kv[i], kv[i + 1]);
+            }
             if (body != null) {
                 c.setDoOutput(true);
                 c.setRequestProperty("Content-Type", contentType);

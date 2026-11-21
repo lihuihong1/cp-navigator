@@ -124,8 +124,25 @@ final class Ui {
         return t;
     }
 
+    /** 站点 logo（drawable/logo_<oj>.png，来自资源，缺失时返回 null 由调用方退回文字徽标）。 */
+    static android.widget.ImageView logo(Context c, String oj, float sizeDp) {
+        try {
+            int id = c.getResources().getIdentifier("logo_" + oj, "drawable", c.getPackageName());
+            if (id == 0) return null;
+            android.widget.ImageView iv = new android.widget.ImageView(c);
+            iv.setImageResource(id);
+            iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+            int s = dp(c, sizeDp);
+            iv.setLayoutParams(new LinearLayout.LayoutParams(s, s));
+            return iv;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     static void toast(Context c, String msg) {
-        android.widget.Toast.makeText(c, msg, android.widget.Toast.LENGTH_SHORT).show();
+        // 用自己的浮层：系统 toast 的图标在某些 ROM 上会退成默认机器人（见 Tip）
+        Tip.show(c, msg);
     }
 
     static int withAlpha(int color, int alpha) {

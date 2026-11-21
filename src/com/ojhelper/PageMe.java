@@ -97,8 +97,14 @@ final class PageMe {
 
             LinearLayout top = Ui.row(act);
             top.setPadding(Ui.dp(act, 14), Ui.dp(act, 11), Ui.dp(act, 12), Ui.dp(act, 2));
-            top.addView(Ui.badge(act, M.ojShort(oj), M.ojColor(oj)));
-            TextView name = Ui.tv(act, "  " + M.ojName(oj), 13f, Ui.TEXT, true);
+            android.widget.ImageView mark = Ui.logo(act, oj, 20);
+            LinearLayout.LayoutParams mp = Ui.lp(LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            mp.rightMargin = Ui.dp(act, 8);
+            mp.gravity = android.view.Gravity.CENTER_VERTICAL;
+            top.addView(mark != null ? (View) mark
+                    : Ui.badge(act, M.ojShort(oj), M.ojColor(oj)), mp);
+            TextView name = Ui.tv(act, M.ojName(oj), 13f, Ui.TEXT, true);
             top.addView(name, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
             row.btn = Ui.tv(act, "查询", 12f, Ui.ACCENT, true);

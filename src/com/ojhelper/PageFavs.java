@@ -80,7 +80,7 @@ final class PageFavs {
                 public void changed() {
                     reload();
                 }
-            }));
+            }, false, true));
             card.addView(wrap);
             if (i < list.size() - 1) {
                 LinearLayout dw = Ui.col(act);

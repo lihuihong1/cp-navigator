@@ -11,6 +11,10 @@ final class Cal {
     private Cal() {}
 
     static void add(Context c, M.Contest ct) {
+        if (ct.finished(System.currentTimeMillis())) {
+            Ui.toast(c, "比赛已结束，无需添加日历");
+            return;
+        }
         Intent i = new Intent(Intent.ACTION_INSERT);
         i.setData(CalendarContract.Events.CONTENT_URI);
         i.putExtra(CalendarContract.Events.TITLE, "[" + M.ojShort(ct.oj) + "] " + ct.title);

@@ -10,8 +10,8 @@ import java.util.TimeZone;
 /** 数据模型与常量。 */
 final class M {
 
-    static final String VERSION = "1.2.0";
-    static final int VERSION_CODE = 3;
+    static final String VERSION = "1.3.10";
+    static final int VERSION_CODE = 15;
     /** 由 build.sh 生成 BuildStamp.java 注入，见 BuildStamp.T。 */
     static final String BUILD_TIME = BuildStamp.T;
 
@@ -23,11 +23,12 @@ final class M {
     static final String LC = "lc";
     static final String LG = "luogu";
     static final String NC = "nowcoder";
+    static final String LQ = "lanqiao";
     static final String VJ = "vjudge";
     static final String HDU = "hdu";
 
     /** 比赛页可选的源（顺序即多选列表的顺序）。 */
-    static final String[] ALL_CONTEST = {CF, ATC, LG, LC, NC};
+    static final String[] ALL_CONTEST = {CF, ATC, LG, LQ, LC, NC};
 
     /** 统计页的 7 个 OJ（顺序即展示顺序）。 */
     static final String[] STAT_OJS = {CF, ATC, LC, LG, NC, VJ, HDU};
@@ -37,6 +38,7 @@ final class M {
         if (ATC.equals(oj)) return "AtCoder";
         if (LC.equals(oj)) return "力扣";
         if (LG.equals(oj)) return "洛谷";
+        if (LQ.equals(oj)) return "蓝桥云课";
         if (NC.equals(oj)) return "牛客";
         if (VJ.equals(oj)) return "VJudge";
         if (HDU.equals(oj)) return "HDU";
@@ -48,6 +50,7 @@ final class M {
         if (ATC.equals(oj)) return "AtCoder";
         if (LC.equals(oj)) return "力扣";
         if (LG.equals(oj)) return "洛谷";
+        if (LQ.equals(oj)) return "蓝桥";
         if (NC.equals(oj)) return "牛客";
         if (VJ.equals(oj)) return "VJudge";
         if (HDU.equals(oj)) return "HDU";
@@ -59,6 +62,7 @@ final class M {
         if (ATC.equals(oj)) return 0xFF3A3A46;
         if (LC.equals(oj)) return 0xFFF89F1B;
         if (LG.equals(oj)) return 0xFF00A6A6;
+        if (LQ.equals(oj)) return 0xFF1E7BE8;
         if (NC.equals(oj)) return 0xFF00B96B;
         if (VJ.equals(oj)) return 0xFFE2574C;
         if (HDU.equals(oj)) return 0xFF8E44AD;
@@ -186,7 +190,7 @@ final class M {
     static String windowText() {
         long s = startOfToday();
         long e = windowEnd() - 1;
-        return fmt("MM-dd").format(s) + " ~ " + fmt("MM-dd").format(e);
+        return fmt("yyyy-MM-dd").format(s) + " ~ " + fmt("yyyy-MM-dd").format(e);
     }
 
     static String duration(long ms) {
@@ -250,7 +254,7 @@ final class M {
         if (d == 0) return "今天";
         if (d == 1) return "明天";
         if (d == 2) return "后天";
-        return fmt("MM-dd").format(new java.util.Date(ms)) + " " + weekOf(ms);
+        return fmt("yyyy-MM-dd").format(new java.util.Date(ms)) + " " + weekOf(ms);
     }
 
     /** 今天 2026-11-20 周五 / 2026-11-23 周一 */

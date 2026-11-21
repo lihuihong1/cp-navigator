@@ -3,6 +3,7 @@ package com.ojhelper;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -25,7 +26,9 @@ final class ContestFetch {
     private static final SimpleDateFormat YMD_HM = M.fmt("yyyy-MM-dd HH:mm");
 
     static boolean inWindow(long start, long end, long now) {
-        return end > now && start < M.windowEnd();
+        // 今天已经结束的比赛也保留（用户要求"严格查今天"），只是不能加日历；
+        // 昨天及更早结束的全部丢掉。
+        return start < M.windowEnd() && end > M.startOfToday();
     }
 
     /** 并行拉取全部源；阻塞，调用方自行放到子线程。 */
@@ -68,6 +71,7 @@ final class ContestFetch {
             else if (M.LC.equals(oj)) lc(r, now);
             else if (M.LG.equals(oj)) luogu(r, now);
             else if (M.NC.equals(oj)) nowcoder(r, now);
+            else if (M.LQ.equals(oj)) lanqiao(r, now);
             else if (M.ATC.equals(oj)) atc(r, now);
         } catch (M.OjError e) {
             r.err = e;
@@ -110,9 +114,47 @@ final class ContestFetch {
         }
     }
 
-    // ---------------- 力扣（响应约 9MB，逐对象扫描，避免整包解析） ----------------
+    // ---------------- 力扣（GraphQL 只问未来几场，响应几百字节） ----------------
+
+    private static final String LC_UPCOMING =
+            "{\"query\":\"{ contestUpcomingContests { title startTime duration titleSlug } }\"}";
 
     private static void lc(Result r, long now) throws Exception {
+        try {
+            lcGraphql(r, now);
+            return;
+        } catch (Exception e) {
+            // GraphQL 挂了才退回旧接口（约 9MB，慢），正常情况下走不到这里
+        }
+        lcRest(r, now);
+    }
+
+    private static void lcGraphql(Result r, long now) throws Exception {
+        String body = Net.postJson("https://leetcode.cn/graphql", LC_UPCOMING,
+                "https://leetcode.cn/contest/");
+        java.util.List<String> objs = objectsAt(body, body.indexOf("contestUpcomingContests"));
+        if (objs.isEmpty()) throw new M.OjError(M.Err.BROKEN, "返回格式变化");
+        for (String o : objs) {
+            String title = Json.str(o, "title");
+            long st = Json.num(o, "startTime") * 1000L;
+            long dur = Json.num(o, "duration") * 1000L;
+            if (st <= 0 || title.isEmpty()) continue;
+            if (dur <= 0) dur = 5400_000L;
+            if (!inWindow(st, st + dur, now)) continue;
+            String slug = Json.str(o, "titleSlug");
+            M.Contest c = new M.Contest();
+            c.oj = M.LC;
+            c.sid = slug.isEmpty() ? String.valueOf(st) : slug;
+            c.title = title;
+            c.start = st;
+            c.end = st + dur;
+            c.url = "https://leetcode.cn/contest/" + c.sid + "/";
+            r.list.add(c);
+        }
+    }
+
+    /** 旧接口：9MB，按开始时间倒序排列，扫到很久以前的比赛就停。 */
+    private static void lcRest(Result r, long now) throws Exception {
         String body = Net.get("https://leetcode.cn/contest/api/list/", "https://leetcode.cn/contest/");
         if (!body.contains("\"contests\"")) throw new M.OjError(M.Err.BROKEN, "返回格式变化");
         int i = body.indexOf("\"contests\":[");
@@ -227,8 +269,42 @@ final class ContestFetch {
             Pattern.DOTALL);
 
     private static void luogu(Result r, long now) throws Exception {
-        // 洛谷要求先拿 C3VK cookie 再重放，否则 302 回自己无限循环。
-        // Android 的 HttpURLConnection 会改写手写的 Cookie 头，所以走裸 TLS，失败再退回普通请求。
+        // 同时带 x-lentille-request 与 x-requested-with，洛谷才直接回 JSON：
+        // 省掉「302 回自己 → 拿 C3VK cookie → 重放」那一套，也绕开 Android 改写 Cookie 头的老问题。
+        String api = "https://www.luogu.com.cn/contest/list?_contentOnly=1";
+        String body = null;
+        try {
+            body = Net.getWith(api, "https://www.luogu.com.cn/contest/list",
+                    new String[]{"x-lentille-request", "content-only",
+                            "x-requested-with", "XMLHttpRequest"});
+        } catch (Exception ignored) {
+            // 退回 HTML
+        }
+        if (body != null && body.trim().startsWith("{")) {
+            java.util.List<String> objs = objectsAt(body, body.indexOf("\"result\""));
+            for (String o : objs) {
+                String name = Json.str(o, "name");
+                long st = Json.num(o, "startTime") * 1000L;
+                long en = Json.num(o, "endTime") * 1000L;
+                if (st <= 0 || name.isEmpty()) continue;
+                if (en <= st) en = st + 2 * 3600_000L;
+                if (!inWindow(st, en, now)) continue;
+                M.Contest c = new M.Contest();
+                c.oj = M.LG;
+                c.sid = String.valueOf(Json.num(o, "id"));
+                c.title = name;
+                c.start = st;
+                c.end = en;
+                c.url = "https://www.luogu.com.cn/contest/" + c.sid;
+                r.list.add(c);
+            }
+            return;
+        }
+        luoguHtml(r, now);
+    }
+
+    /** 兜底：拿不到 JSON 就解析服务端渲染的 HTML（要先过 cookie 那一关，见 Net.getRaw）。 */
+    private static void luoguHtml(Result r, long now) throws Exception {
         String LG = "https://www.luogu.com.cn/contest/list";
         String body;
         try {
@@ -295,7 +371,89 @@ final class ContestFetch {
         }
     }
 
+    // ---------------- 蓝桥云课（官网 JSON；game_type_code=2 只取算法赛） ----------------
+
+    private static final String LQ_API = "https://www.lanqiao.cn/api/v2/contests/"
+            + "?sort=opentime&paginate=0&status=not_finished&game_type_code=2";
+
+    private static void lanqiao(Result r, long now) throws Exception {
+        String body = Net.get(LQ_API, "https://www.lanqiao.cn/contests/");
+        if (!body.trim().startsWith("[")) throw new M.OjError(M.Err.BROKEN, "返回格式变化");
+        java.util.List<String> objs = objectsAt(body, 0);
+        for (String o : objs) {
+            String name = Json.str(o, "name");
+            long st = isoTime(Json.str(o, "open_at"));
+            long en = isoTime(Json.str(o, "end_at"));
+            if (st <= 0 || name.isEmpty()) continue;
+            if (en <= st) en = st + 2 * 3600_000L;
+            if (!inWindow(st, en, now)) continue;
+            String href = Json.str(o, "html_url");
+            M.Contest c = new M.Contest();
+            c.oj = M.LQ;
+            c.sid = String.valueOf(Json.num(o, "id"));
+            c.title = name;
+            c.start = st;
+            c.end = en;
+            c.url = href.startsWith("http") ? href : "https://www.lanqiao.cn" + href;
+            r.list.add(c);
+        }
+    }
+
+    /** 蓝桥的时间形如 2026-11-21T19:00:00+08:00。 */
+    private static long isoTime(String s) {
+        if (s == null || s.isEmpty()) return -1;
+        try {
+            SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US);
+            f.setLenient(false);
+            java.util.Date d = f.parse(s.trim());
+            return d == null ? -1 : d.getTime();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
     // ---------------- 小工具 ----------------
+
+    /**
+     * 从 from 之后第一个 '[' 起，把数组第一层的 {@code {...}} 逐个切出来。
+     * 跳过字符串内的括号（标题里常有括号字符），嵌套数组/对象靠深度计平衡。
+     */
+    static java.util.List<String> objectsAt(String body, int from) {
+        java.util.List<String> out = new java.util.ArrayList<String>();
+        if (body == null || from < 0) return out;
+        int i = body.indexOf('[', from);
+        if (i < 0) return out;
+        int arrDepth = 0;
+        int depth = 0;
+        int objStart = -1;
+        boolean inStr = false;
+        boolean esc = false;
+        for (; i < body.length(); i++) {
+            char ch = body.charAt(i);
+            if (inStr) {
+                if (esc) esc = false;
+                else if (ch == '\\') esc = true;
+                else if (ch == '"') inStr = false;
+                continue;
+            }
+            if (ch == '"') { inStr = true; continue; }
+            if (ch == '[') arrDepth++;
+            else if (ch == ']') {
+                arrDepth--;
+                if (arrDepth == 0) break;
+            } else if (ch == '{') {
+                if (depth == 0 && arrDepth == 1) objStart = i;
+                depth++;
+            } else if (ch == '}') {
+                depth--;
+                if (depth == 0 && objStart >= 0) {
+                    out.add(body.substring(objStart, i + 1));
+                    objStart = -1;
+                }
+            }
+        }
+        return out;
+    }
 
     static long parse(SimpleDateFormat f, String s) {
         try {

@@ -32,6 +32,19 @@ final class StatsFetch {
         }
     }
 
+    /** 把一段说明拼到 extra 后面（extra 为空时直接用它）。 */
+    static String append(String cur, String more) {
+        if (cur == null || cur.isEmpty()) return more;
+        return cur + " · " + more;
+    }
+
+    /** 10.07 -> "10.1"，10.0 -> "10"。 */
+    static String trimPct(double d) {
+        double r = Math.round(d * 10) / 10.0;
+        if (r == Math.floor(r)) return String.valueOf((long) r);
+        return String.valueOf(r);
+    }
+
     static void sleep(long ms) {
         try {
             Thread.sleep(ms);
@@ -189,7 +202,31 @@ final class StatsFetch {
             int sr = prof.optInt("siteRanking", 0);
             if (sr > 0) s.extra = "站点排名 " + sr;
         }
-        // 力扣中国站的竞赛分没有公开 GraphQL 字段，此处保持为空
+        // 竞赛分要走 noj-go 端点：主站 /graphql 的 UserContestRankingNode 上没有 rating 字段
+        String nq = "{\"query\":\"query userContestRankingInfo($userSlug:String!){"
+                + " userContestRanking(userSlug:$userSlug){ rating globalRanking localRanking topPercentage }"
+                + " }\",\"variables\":{\"userSlug\":\"" + h.replace("\\", "").replace("\"", "") + "\"},"
+                + "\"operationName\":\"userContestRankingInfo\"}";
+        String ratingErr = null;
+        try {
+            String nb = Net.postJson("https://leetcode.cn/graphql/noj-go/", nq,
+                    "https://leetcode.cn/u/" + enc(h) + "/");
+            JSONObject nr = new JSONObject(nb).optJSONObject("data");
+            JSONObject uc = nr == null ? null : nr.optJSONObject("userContestRanking");
+            if (uc != null) {
+                double rt = uc.optDouble("rating", Double.NaN);
+                if (!Double.isNaN(rt) && rt > 0) s.rating = Double.valueOf(rt);
+                int gr = uc.optInt("globalRanking", 0);
+                if (gr > 0) s.extra = append(s.extra, "竞赛排名 " + gr);
+                double tp = uc.optDouble("topPercentage", 0);
+                if (tp > 0 && tp <= 100) s.extra = append(s.extra, "前 " + trimPct(tp) + "%");
+            } else {
+                s.extra = append(s.extra, "未参加过竞赛");
+            }
+        } catch (Exception e) {
+            ratingErr = "竞赛分获取失败";
+        }
+        if (ratingErr != null) s.extra = append(s.extra, ratingErr);
         return s;
     }
 

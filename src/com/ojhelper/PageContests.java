@@ -36,6 +36,9 @@ final class PageContests {
     private boolean busy;
     private int seq;
 
+    /** 折叠状态："oj:<oj>" / "day:<dayStart>"，只在内存里，切页回来还在。 */
+    private final Set<String> collapsed = new HashSet<String>();
+
     /** 上次查询结果（仅内存），null 表示本进程还没查过。 */
     private List<ContestFetch.Result> last;
     private long lastAt;
@@ -271,11 +274,25 @@ final class PageContests {
 
         LinearLayout head = Ui.row(act);
         head.setPadding(Ui.dp(act, 14), Ui.dp(act, 11), Ui.dp(act, 14), Ui.dp(act, 11));
-        head.addView(Ui.badge(act, M.ojShort(oj), M.ojColor(oj)));
-        head.addView(Ui.tv(act, "  正在查询…", 12f, Ui.SUB, false),
+        head.addView(siteMark(oj, 18), markLp());
+        head.addView(Ui.tv(act, "正在查询…", 12f, Ui.SUB, false),
                 Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         card.addView(head);
         return card;
+    }
+
+    /** 站点标识：有 logo 用 logo，没有就退回文字徽标。 */
+    private View siteMark(String oj, float sizeDp) {
+        android.widget.ImageView iv = Ui.logo(act, oj, sizeDp);
+        return iv != null ? iv : Ui.badge(act, M.ojShort(oj), M.ojColor(oj));
+    }
+
+    private LinearLayout.LayoutParams markLp() {
+        LinearLayout.LayoutParams lp = Ui.lp(LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = Ui.dp(act, 8);
+        lp.gravity = android.view.Gravity.CENTER_VERTICAL;
+        return lp;
     }
 
     private void render(List<ContestFetch.Result> rs, long at) {
@@ -311,6 +328,8 @@ final class PageContests {
     }
 
     private View section(final ContestFetch.Result r, long now) {
+        final String key = "oj:" + r.oj;
+        final boolean open = !collapsed.contains(key);
         LinearLayout card = Ui.card(act, 0);
         LinearLayout.LayoutParams lp = Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -319,13 +338,24 @@ final class PageContests {
 
         LinearLayout head = Ui.row(act);
         head.setPadding(Ui.dp(act, 14), Ui.dp(act, 11), Ui.dp(act, 14), Ui.dp(act, 9));
-        head.addView(Ui.badge(act, M.ojShort(r.oj), M.ojColor(r.oj)));
-        head.addView(Ui.tv(act, "  " + M.ojName(r.oj), 13f, Ui.TEXT, true),
+        head.addView(siteMark(r.oj, 22), markLp());
+        head.addView(Ui.tv(act, M.ojName(r.oj), 13f, Ui.TEXT, true),
                 Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         head.addView(Ui.tv(act, r.err != null ? "失败" : (r.list.size() + " 场"), 12f,
                 r.err != null ? Ui.RED : Ui.SUB, false));
-        card.addView(head);
+        addChevron(head, open);
+        head.setClickable(true);
+        head.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggle(key);
+            }
+        });
+        card.addView(head, Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
         card.addView(Ui.divider(act));
+
+        if (!open) return card;
 
         if (r.err != null) {
             TextView e = Ui.tv(act, r.err.userText(), 12f, Ui.RED, false);
@@ -340,12 +370,14 @@ final class PageContests {
             return card;
         }
 
-        for (int i = 0; i < r.list.size(); i++) {
+        // 组内按开始时间升序：越早越靠前（同一天也是早的在前）
+        List<M.Contest> sorted = M.sortByStart(r.list);
+        for (int i = 0; i < sorted.size(); i++) {
             LinearLayout wrap = Ui.col(act);
             wrap.setPadding(Ui.dp(act, 14), 0, Ui.dp(act, 10), 0);
-            wrap.addView(ContestRow.build(act, store, r.list.get(i), favCb(), false));
+            wrap.addView(ContestRow.build(act, store, sorted.get(i), favCb(), false));
             card.addView(wrap);
-            if (i < r.list.size() - 1) card.addView(insetDivider());
+            if (i < sorted.size() - 1) card.addView(insetDivider());
         }
         card.addView(spacer(6));
         return card;
@@ -375,7 +407,10 @@ final class PageContests {
             long de = ds + M.DAY;
             List<M.Contest> day = new ArrayList<M.Contest>();
             for (M.Contest c : all) {
-                if (c.start < de && c.end > ds) day.add(c);
+                // 按"开始时间"归日：跨零点的比赛只算在开始那天；
+                // 唯一例外是昨天开始、此刻还没结束的，归到今天开头（否则它会从日期视图里消失）
+                boolean carry = (d == 0 && c.start < ds && c.end > ds);
+                if ((c.start >= ds && c.start < de) || carry) day.add(c);
             }
             body.addView(dayCard(ds, M.sortByStart(day), now));
         }
@@ -385,6 +420,8 @@ final class PageContests {
     }
 
     private View dayCard(long dayStart, List<M.Contest> list, long now) {
+        final String key = "day:" + dayStart;
+        final boolean open = !collapsed.contains(key);
         LinearLayout card = Ui.card(act, 0);
         LinearLayout.LayoutParams lp = Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -398,11 +435,23 @@ final class PageContests {
         boolean isToday = M.dayDiff(dayStart) == 0;
         head.addView(Ui.tv(act, list.size() + " 场", 12f,
                 list.isEmpty() ? Ui.SUB : (isToday ? Ui.ACCENT : Ui.SUB), false));
-        card.addView(head);
+        addChevron(head, open);
+        head.setClickable(true);
+        head.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggle(key);
+            }
+        });
+        card.addView(head, Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
         card.addView(Ui.divider(act));
+
+        if (!open) return card;
 
         if (list.isEmpty()) {
             TextView e = Ui.tv(act, "没有比赛", 12f, Ui.SUB, false);
+            e.setGravity(Gravity.CENTER);
             e.setPadding(Ui.dp(act, 14), Ui.dp(act, 12), Ui.dp(act, 14), Ui.dp(act, 13));
             card.addView(e);
             return card;
@@ -437,6 +486,18 @@ final class PageContests {
     }
 
     // ---------------- 公共小件 ----------------
+
+    /** 点分组标题：收起 / 展开这一组，用内存里的上次结果重绘，不联网。 */
+    private void toggle(String key) {
+        if (!collapsed.remove(key)) collapsed.add(key);
+        if (last != null) render(last, lastAt);
+    }
+
+    private void addChevron(LinearLayout head, boolean open) {
+        TextView c = Ui.tv(act, open ? "▾" : "▸", 12f, Ui.SUB, false);
+        c.setPadding(Ui.dp(act, 8), 0, 0, 0);
+        head.addView(c);
+    }
 
     private ContestRow.OnFavChanged favCb() {
         return new ContestRow.OnFavChanged() {
