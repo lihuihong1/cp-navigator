@@ -201,7 +201,7 @@ final class Reminder {
         store.deleteRemind(ct.key());
         AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
         if (am != null) {
-            PendingIntent pi = pi(c, ct, PendingIntent.FLAG_NO_CREATE);
+            PendingIntent pi = pi(c, ct, 0, PendingIntent.FLAG_NO_CREATE);
             if (pi != null) {
                 am.cancel(pi);
                 pi.cancel();
@@ -215,7 +215,7 @@ final class Reminder {
             Store.Rem r = list.get(i);
             AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
             if (am != null) {
-                PendingIntent pi = pi(c, r.c, PendingIntent.FLAG_NO_CREATE);
+                PendingIntent pi = pi(c, r.c, r.lead, PendingIntent.FLAG_NO_CREATE);
                 if (pi != null) {
                     am.cancel(pi);
                     pi.cancel();
@@ -243,7 +243,7 @@ final class Reminder {
     private static boolean schedule(Context c, M.Contest ct, int lead, long at, boolean exact) {
         AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return false;
-        PendingIntent pi = pi(c, ct, PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent pi = pi(c, ct, lead, PendingIntent.FLAG_UPDATE_CURRENT);
         try {
             if (exact) {
                 am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
@@ -263,10 +263,12 @@ final class Reminder {
         }
     }
 
-    private static PendingIntent pi(Context c, M.Contest ct, int flags) {
+    private static PendingIntent pi(Context c, M.Contest ct, int lead, int flags) {
         Intent i = new Intent(c, AlarmReceiver.class);
         i.setAction(AlarmReceiver.ACTION);
         i.putExtra("key", ct.key());
+        // 通知标题要用到提前量：不放进 Intent，接收方只能拿到默认 0，标题就永远是「比赛马上开始」。
+        i.putExtra("lead", lead);
         i.putExtra("oj", ct.oj);
         i.putExtra("title", ct.title);
         i.putExtra("start", ct.start);
