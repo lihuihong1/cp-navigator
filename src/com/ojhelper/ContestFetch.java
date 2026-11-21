@@ -30,10 +30,16 @@ final class ContestFetch {
 
     /** 并行拉取全部源；阻塞，调用方自行放到子线程。 */
     static List<Result> fetchAll() {
-        ExecutorService pool = Executors.newFixedThreadPool(4);
+        return fetchAll(java.util.Arrays.asList(M.ALL_CONTEST));
+    }
+
+    /** 只拉取指定源，返回顺序与传入一致。 */
+    static List<Result> fetchAll(java.util.Collection<String> sources) {
+        final List<String> src = new ArrayList<String>(sources);
+        ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, Math.min(4, src.size())));
         List<Future<Result>> fs = new ArrayList<Future<Result>>();
         final long now = System.currentTimeMillis();
-        for (final String oj : M.CONTEST_OJS) {
+        for (final String oj : src) {
             fs.add(pool.submit(new Callable<Result>() {
                 @Override
                 public Result call() {
@@ -46,7 +52,7 @@ final class ContestFetch {
             try {
                 out.add(fs.get(i).get());
             } catch (Exception e) {
-                Result r = new Result(M.CONTEST_OJS[i]);
+                Result r = new Result(src.get(i));
                 r.err = new M.OjError(M.Err.BROKEN, "任务异常");
                 out.add(r);
             }
@@ -62,6 +68,7 @@ final class ContestFetch {
             else if (M.LC.equals(oj)) lc(r, now);
             else if (M.LG.equals(oj)) luogu(r, now);
             else if (M.NC.equals(oj)) nowcoder(r, now);
+            else if (M.ATC.equals(oj)) atc(r, now);
         } catch (M.OjError e) {
             r.err = e;
             r.list.clear();
@@ -163,6 +170,56 @@ final class ContestFetch {
         }
     }
 
+    // ---------------- AtCoder（官网 SSR HTML，含 Upcoming Contests） ----------------
+    // 不用 kenkoooo 镜像：它的 contests.json 只到当天，没有已公布的未来比赛。
+
+    private static final Pattern ATC_ROW = Pattern.compile(
+            "<tr>\\s*<td[^>]*>\\s*<a href='[^>]*'>\\s*<time class='fixtime fixtime-full'>([^<]+)</time>"
+                    + ".*?<a href=\"/contests/([^\"]+)\">([^<]+)</a>"
+                    + ".*?<td class=\"text-center\">(\\d{1,3}):(\\d{2})</td>",
+            Pattern.DOTALL);
+
+    /** 时间形如 2026-11-21 21:00:00+0900，本身带时区，不需要再换算。 */
+    private static long atcTime(String raw) {
+        try {
+            java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ssZ",
+                    java.util.Locale.US);
+            f.setLenient(false);
+            java.util.Date d = f.parse(raw.trim());
+            return d == null ? -1 : d.getTime();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    private static void atc(Result r, long now) throws Exception {
+        String body = Net.get("https://atcoder.jp/contests/", "https://atcoder.jp/");
+        if (body == null || body.isEmpty()) throw new M.OjError(M.Err.BROKEN, "空响应");
+        Matcher m = ATC_ROW.matcher(body);
+        java.util.HashSet<String> seen = new java.util.HashSet<String>();
+        int rows = 0;
+        while (m.find()) {
+            rows++;
+            String sid = m.group(2).trim();
+            long st = atcTime(m.group(1));
+            int durMin = Integer.parseInt(m.group(4)) * 60 + Integer.parseInt(m.group(5));
+            if (sid.isEmpty() || st <= 0 || durMin <= 0) continue;
+            if (!seen.add(sid)) continue;          // 同一场比赛在多个表里重复出现
+            long end = st + durMin * 60000L;
+            if (!inWindow(st, end, now)) continue; // 表里也有已结束的比赛，靠时间过滤
+            M.Contest c = new M.Contest();
+            c.oj = M.ATC;
+            c.sid = sid;
+            String t = Net.unescapeHtml(m.group(3)).trim();
+            c.title = t.isEmpty() ? sid : t;
+            c.start = st;
+            c.end = end;
+            c.url = "https://atcoder.jp/contests/" + sid;
+            r.list.add(c);
+        }
+        if (rows == 0) throw new M.OjError(M.Err.BROKEN, "页面结构变化");
+    }
+
     // ---------------- 洛谷（服务端渲染 HTML） ----------------
 
     private static final Pattern LG_ITEM = Pattern.compile(
@@ -170,8 +227,15 @@ final class ContestFetch {
             Pattern.DOTALL);
 
     private static void luogu(Result r, long now) throws Exception {
-        String body = Net.get("https://www.luogu.com.cn/contest/list",
-                "https://www.luogu.com.cn/contest/list");
+        // 洛谷要求先拿 C3VK cookie 再重放，否则 302 回自己无限循环。
+        // Android 的 HttpURLConnection 会改写手写的 Cookie 头，所以走裸 TLS，失败再退回普通请求。
+        String LG = "https://www.luogu.com.cn/contest/list";
+        String body;
+        try {
+            body = Net.getRaw(LG, LG);
+        } catch (Exception e) {
+            body = Net.get(LG, LG);
+        }
         Matcher m = LG_ITEM.matcher(body);
         while (m.find()) {
             String span = m.group(3);

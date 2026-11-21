@@ -10,8 +10,8 @@ import java.util.TimeZone;
 /** 数据模型与常量。 */
 final class M {
 
-    static final String VERSION = "1.1.0";
-    static final int VERSION_CODE = 2;
+    static final String VERSION = "1.2.0";
+    static final int VERSION_CODE = 3;
     /** 由 build.sh 生成 BuildStamp.java 注入，见 BuildStamp.T。 */
     static final String BUILD_TIME = BuildStamp.T;
 
@@ -26,8 +26,8 @@ final class M {
     static final String VJ = "vjudge";
     static final String HDU = "hdu";
 
-    /** 比赛可查询的 4 个源。 */
-    static final String[] CONTEST_OJS = {NC, LC, CF, LG};
+    /** 比赛页可选的源（顺序即多选列表的顺序）。 */
+    static final String[] ALL_CONTEST = {CF, ATC, LG, LC, NC};
 
     /** 统计页的 7 个 OJ（顺序即展示顺序）。 */
     static final String[] STAT_OJS = {CF, ATC, LC, LG, NC, VJ, HDU};
@@ -219,5 +219,47 @@ final class M {
             }
         });
         return out;
+    }
+
+    // ---------- 展示辅助 ----------
+
+    static String hm(long ms) {
+        return fmt("HH:mm").format(new java.util.Date(ms));
+    }
+
+    static String weekOf(long ms) {
+        Calendar c = Calendar.getInstance(BJ);
+        c.setTimeInMillis(ms);
+        return WEEK[c.get(Calendar.DAY_OF_WEEK) - 1];
+    }
+
+    /** 与今天相差几个自然日：0=今天，1=明天 … */
+    static int dayDiff(long ms) {
+        Calendar b = Calendar.getInstance(BJ);
+        b.setTimeInMillis(ms);
+        b.set(Calendar.HOUR_OF_DAY, 0);
+        b.set(Calendar.MINUTE, 0);
+        b.set(Calendar.SECOND, 0);
+        b.set(Calendar.MILLISECOND, 0);
+        return (int) ((b.getTimeInMillis() - startOfToday()) / DAY);
+    }
+
+    /** 今天 / 明天 / 后天 / 12-05 周六 */
+    static String dayLabel(long ms) {
+        int d = dayDiff(ms);
+        if (d == 0) return "今天";
+        if (d == 1) return "明天";
+        if (d == 2) return "后天";
+        return fmt("MM-dd").format(new java.util.Date(ms)) + " " + weekOf(ms);
+    }
+
+    /** 今天 2026-11-20 周五 / 2026-11-23 周一 */
+    static String dayFull(long ms) {
+        String md = fmt("yyyy-MM-dd").format(new java.util.Date(ms)) + " " + weekOf(ms);
+        int d = dayDiff(ms);
+        if (d == 0) return "今天 " + md;
+        if (d == 1) return "明天 " + md;
+        if (d == 2) return "后天 " + md;
+        return md;
     }
 }

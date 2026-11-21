@@ -156,7 +156,7 @@ final class PageMe {
         v.setPadding(0, Ui.dp(act, 5), 0, 0);
         card.addView(v);
 
-        TextView note = Ui.tv(act, "所有数据（收藏、解题数、排位分）只存在本机应用私有目录，"
+        TextView note = Ui.tv(act, "所有数据（收藏、解题数、rating）只存在本机应用私有目录，"
                 + "不参与云备份，卸载即清空，不支持迁移。", 11f, Ui.SUB, false);
         note.setPadding(0, Ui.dp(act, 8), 0, 0);
         note.setLineSpacing(Ui.dp(act, 2), 1f);
@@ -268,7 +268,7 @@ final class PageMe {
     private void paint(Row row, Store.Acc a) {
         String solved = a.solved == null ? "—" : String.valueOf(a.solved.intValue());
         String rating = a.rating == null ? "—" : trim(a.rating.doubleValue());
-        row.value.setText("解题 " + solved + "　·　排位 " + rating);
+        row.value.setText("解题 " + solved + "　·　rating " + rating);
         row.value.setTextColor(a.lastError.isEmpty() ? Ui.TEXT : 0xFF9CA3AF);
 
         StringBuilder meta = new StringBuilder();
@@ -293,7 +293,7 @@ final class PageMe {
     private void confirmClear() {
         new android.app.AlertDialog.Builder(act)
                 .setTitle("清空本地数据？")
-                .setMessage("收藏和已保存的解题数 / 排位分都会被删除，无法恢复。")
+                .setMessage("收藏和已保存的解题数 / rating 都会被删除，无法恢复。")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("清空", new DialogInterface.OnClickListener() {
                     @Override

@@ -3,13 +3,11 @@ package com.ojhelper;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.CookieHandler;
-import java.net.CookieManager;
-import java.net.CookiePolicy;
 import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -33,8 +31,9 @@ final class Net {
     static synchronized void init() {
         if (inited) return;
         inited = true;
-        // 双保险：平台 CookieManager + 自己的 JAR
-        CookieHandler.setDefault(new CookieManager(null, CookiePolicy.ACCEPT_ALL));
+        // 故意不装 CookieHandler：Android 的 HttpURLConnection 在存在 CookieHandler 时
+        // 会用自己的 jar 覆盖我们手写的 Cookie 头，洛谷这类靠 cookie 放行的站点就会 302 死循环。
+        // 所以 cookie 完全由下面的 JAR 自己维护。
     }
 
     static String get(String url, String referer) throws M.OjError {
@@ -255,6 +254,179 @@ final class Net {
             int len = sb.length();
             JAR.put(host, len > 2 ? sb.substring(0, len - 2) : "");
         }
+    }
+
+    /**
+     * 裸 TLS 请求：请求头、跳转、cookie 全由自己控制，用于绕开平台实现对 Cookie 头的改写。
+     * 只支持 GET，够洛谷这类站点用。
+     */
+    static String getRaw(String url, String referer) throws M.OjError {
+        init();
+        try {
+            return raw(url, referer, 0);
+        } catch (M.OjError e) {
+            throw e;
+        } catch (SocketTimeoutException e) {
+            throw new M.OjError(M.Err.NETWORK, "连接超时");
+        } catch (UnknownHostException e) {
+            throw new M.OjError(M.Err.NETWORK, "域名解析失败");
+        } catch (Exception e) {
+            String m = e.getMessage();
+            if (m == null) m = e.getClass().getSimpleName();
+            throw new M.OjError(M.Err.NETWORK, m.length() > 60 ? m.substring(0, 60) : m);
+        }
+    }
+
+    private static String raw(String url, String referer, int depth) throws Exception {
+        if (depth > MAX_HOPS) {
+            throw new M.OjError(M.Err.BROKEN, "重定向次数过多（" + MAX_HOPS + " 跳）");
+        }
+        URL u = new URL(url);
+        boolean tls = "https".equalsIgnoreCase(u.getProtocol());
+        String host = u.getHost();
+        int port = u.getPort() > 0 ? u.getPort() : (tls ? 443 : 80);
+
+        java.net.Socket sock;
+        if (tls) {
+            javax.net.ssl.SSLSocketFactory f =
+                    (javax.net.ssl.SSLSocketFactory) javax.net.ssl.SSLSocketFactory.getDefault();
+            javax.net.ssl.SSLSocket ss = (javax.net.ssl.SSLSocket) f.createSocket(host, port);
+            ss.setSoTimeout(20000);                 // 握手也要有超时，否则弱网会一直转圈
+            try {
+                javax.net.ssl.SSLParameters p = ss.getSSLParameters();
+                p.setServerNames(java.util.Collections.singletonList(
+                        (javax.net.ssl.SNIServerName) new javax.net.ssl.SNIHostName(host)));
+                p.setEndpointIdentificationAlgorithm("HTTPS");
+                ss.setSSLParameters(p);
+            } catch (Throwable ignored) {
+                // 个别 ROM 没有 SNI 实现，退化成普通握手
+            }
+            ss.startHandshake();
+            sock = ss;
+        } else {
+            sock = new java.net.Socket(host, port);
+        }
+        sock.setSoTimeout(20000);
+
+        String path = u.getPath();
+        if (path == null || path.isEmpty()) path = "/";
+        if (u.getQuery() != null) path = path + "?" + u.getQuery();
+
+        StringBuilder req = new StringBuilder(320);
+        req.append("GET ").append(path).append(" HTTP/1.1\r\n")
+                .append("Host: ").append(host).append("\r\n")
+                .append("User-Agent: ").append(UA).append("\r\n")
+                .append("Accept: text/html,application/json;q=0.9,*/*;q=0.8\r\n")
+                .append("Accept-Language: zh-CN,zh;q=0.9,en;q=0.8\r\n")
+                .append("Accept-Encoding: identity\r\n")
+                .append("Connection: close\r\n");
+        String ck = cookieFor(url);
+        if (ck != null && !ck.isEmpty()) req.append("Cookie: ").append(ck).append("\r\n");
+        if (referer != null) req.append("Referer: ").append(referer).append("\r\n");
+        req.append("\r\n");
+
+        byte[] all;
+        try {
+            java.io.OutputStream os = sock.getOutputStream();
+            os.write(req.toString().getBytes("UTF-8"));
+            os.flush();
+            all = readAll(sock.getInputStream());
+        } finally {
+            try {
+                sock.close();
+            } catch (Exception ignored) {
+            }
+        }
+
+        int split = -1;
+        for (int i = 0; i + 3 < all.length; i++) {
+            if (all[i] == '\r' && all[i + 1] == '\n' && all[i + 2] == '\r' && all[i + 3] == '\n') {
+                split = i;
+                break;
+            }
+        }
+        if (split < 0) throw new M.OjError(M.Err.BROKEN, "响应格式异常");
+
+        String head = new String(all, 0, split, "ISO-8859-1");
+        byte[] body = new byte[all.length - split - 4];
+        System.arraycopy(all, split + 4, body, 0, body.length);
+
+        String[] lines = head.split("\r\n");
+        int code = 0;
+        if (lines.length > 0) {
+            String[] p = lines[0].split(" ");
+            if (p.length > 1) {
+                try {
+                    code = Integer.parseInt(p[1].trim());
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        String location = null;
+        boolean chunked = false;
+        List<String> setCookies = new ArrayList<String>();
+        for (int i = 1; i < lines.length; i++) {
+            int colon = lines[i].indexOf(':');
+            if (colon <= 0) continue;
+            String k = lines[i].substring(0, colon).trim();
+            String v = lines[i].substring(colon + 1).trim();
+            if (k.equalsIgnoreCase("Set-Cookie")) {
+                setCookies.add(v);
+            } else if (k.equalsIgnoreCase("Location")) {
+                location = v;
+            } else if (k.equalsIgnoreCase("Transfer-Encoding")
+                    && v.toLowerCase(Locale.ROOT).contains("chunked")) {
+                chunked = true;
+            }
+        }
+        if (!setCookies.isEmpty()) {
+            Map<String, List<String>> m = new HashMap<String, List<String>>();
+            m.put("Set-Cookie", setCookies);
+            storeCookies(url, m);
+        }
+
+        if (code >= 300 && code < 400) {
+            if (location == null) throw new M.OjError(M.Err.BROKEN, "HTTP " + code + " 没有跳转地址");
+            return raw(resolve(url, location), url, depth + 1);
+        }
+        if (code == 404) throw new M.OjError(M.Err.NOT_FOUND, "页面不存在");
+        if (code == 429 || code == 403) throw new M.OjError(M.Err.RATE_LIMITED, "HTTP " + code);
+        if (code >= 400) throw new M.OjError(M.Err.BROKEN, "HTTP " + code);
+
+        if (chunked) body = dechunk(body);
+        return new String(body, "UTF-8");
+    }
+
+    /** 解 HTTP/1.1 的 chunked 正文。 */
+    private static byte[] dechunk(byte[] in) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(in.length);
+        int i = 0;
+        while (i < in.length) {
+            int eol = -1;
+            for (int j = i; j + 1 < in.length; j++) {
+                if (in[j] == '\r' && in[j + 1] == '\n') {
+                    eol = j;
+                    break;
+                }
+            }
+            if (eol < 0) break;
+            String sz = new String(in, i, eol - i, java.nio.charset.StandardCharsets.ISO_8859_1).trim();
+            int semi = sz.indexOf(';');
+            if (semi > 0) sz = sz.substring(0, semi).trim();
+            int n;
+            try {
+                n = Integer.parseInt(sz, 16);
+            } catch (Exception e) {
+                break;
+            }
+            i = eol + 2;
+            if (n == 0) break;
+            if (i + n > in.length) n = in.length - i;
+            out.write(in, i, n);
+            i += n + 2;
+        }
+        return out.toByteArray();
     }
 
     private static byte[] readAll(InputStream in) throws IOException {
