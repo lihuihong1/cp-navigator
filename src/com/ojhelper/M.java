@@ -10,8 +10,8 @@ import java.util.TimeZone;
 /** 数据模型与常量。 */
 final class M {
 
-    static final String VERSION = "1.5.4";
-    static final int VERSION_CODE = 20;
+    static final String VERSION = "1.6.0";
+    static final int VERSION_CODE = 21;
     /** 由 build.sh 生成 BuildStamp.java 注入，见 BuildStamp.T。 */
     static final String BUILD_TIME = BuildStamp.T;
 

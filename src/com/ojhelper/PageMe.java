@@ -1,5 +1,6 @@
 package com.ojhelper;
 
+import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.text.InputType;
 import android.view.Gravity;
@@ -46,6 +47,18 @@ final class PageMe {
         LinearLayout titleRow = Ui.row(act);
         titleRow.addView(Ui.tv(act, "我的", 21f, Ui.TEXT, true),
                 Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView stats = Ui.tv(act, "题解统计", 13f, Ui.ACCENT, true);
+        stats.setBackground(Ui.stroke(0x00000000, Ui.ACCENT, 8, 1, act));
+        stats.setPadding(Ui.dp(act, 12), Ui.dp(act, 5), Ui.dp(act, 12), Ui.dp(act, 5));
+        stats.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showStats();
+            }
+        });
+        titleRow.addView(stats, Ui.margins(Ui.lp(LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT), act, 0, 0, 8, 0));
+
         TextView all = Ui.tv(act, "全部查询", 13f, Ui.ACCENT, true);
         all.setBackground(Ui.stroke(0x00000000, Ui.ACCENT, 8, 1, act));
         all.setPadding(Ui.dp(act, 12), Ui.dp(act, 5), Ui.dp(act, 12), Ui.dp(act, 5));
@@ -314,5 +327,84 @@ final class PageMe {
                         act.refreshFavBadge();
                     }
                 }).show();
+    }
+
+    // ---------------- 题解统计（饼图） ----------------
+
+    /** 按本地缓存的解题数出饼图；解题数为 0 / 没查过的 OJ 不参与统计。 */
+    private void showStats() {
+        List<Integer> cols = new ArrayList<Integer>();
+        List<String> names = new ArrayList<String>();
+        List<Integer> vals = new ArrayList<Integer>();
+        int total = 0;
+        for (String oj : M.STAT_OJS) {
+            Store.Acc a = store.loadAcc(oj);
+            if (a == null || a.solved == null || a.solved.intValue() <= 0) continue;
+            cols.add(Integer.valueOf(M.ojColor(oj)));
+            names.add(M.ojShort(oj));
+            vals.add(a.solved);
+            total += a.solved.intValue();
+        }
+
+        if (vals.isEmpty()) {
+            new AlertDialog.Builder(act)
+                    .setTitle("题解统计")
+                    .setMessage("暂无数据：先在上面查一次各站的解题数，再回来看统计。")
+                    .setPositiveButton("知道了", null)
+                    .show();
+            return;
+        }
+
+        int n = vals.size();
+        int[] colors = new int[n];
+        String[] labels = new String[n];
+        int[] values = new int[n];
+        for (int i = 0; i < n; i++) {
+            colors[i] = cols.get(i).intValue();
+            labels[i] = names.get(i);
+            values[i] = vals.get(i).intValue();
+        }
+
+        LinearLayout box = Ui.col(act);
+        int p = Ui.dp(act, 16);
+        box.setPadding(p, Ui.dp(act, 4), p, 0);
+        box.addView(Ui.tv(act, "解题统计", 17f, Ui.TEXT, true));
+
+        TextView sum = Ui.tv(act, "总计：" + total + " 题", 15f, 0xFF16A34A, true);
+        sum.setGravity(Gravity.CENTER);
+        sum.setPadding(0, Ui.dp(act, 8), 0, Ui.dp(act, 2));
+        box.addView(sum);
+
+        box.addView(new PieChart(act, colors, labels, values),
+                Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(act, 236)));
+        box.addView(legend(colors, labels, values, total));
+
+        new AlertDialog.Builder(act).setView(box).setPositiveButton("关闭", null).show();
+    }
+
+    /** 图例：两列，色点 + 名称 + 题数 + 占比。太小的扇区在饼里不写标签，靠这里认。 */
+    private LinearLayout legend(int[] colors, String[] labels, int[] values, int total) {
+        LinearLayout wrap = Ui.col(act);
+        wrap.setPadding(0, Ui.dp(act, 12), 0, 0);
+        LinearLayout row = null;
+        for (int i = 0; i < labels.length; i++) {
+            if (i % 2 == 0) {
+                row = Ui.row(act);
+                wrap.addView(row, Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+            }
+            LinearLayout cell = Ui.row(act);
+            // 每个格子里的「色点 + 文字」整体居中，图例看起来才是水平居中的
+            cell.setGravity(Gravity.CENTER);
+            cell.setPadding(0, Ui.dp(act, 3), 0, Ui.dp(act, 3));
+            View dot = new View(act);
+            dot.setBackground(Ui.round(colors[i], 5, act));
+            cell.addView(dot, Ui.margins(Ui.lp(Ui.dp(act, 10), Ui.dp(act, 10)), act, 0, 0, 6, 0));
+            String pct = String.format(java.util.Locale.CHINA, "%.1f%%", 100.0 * values[i] / total);
+            TextView t = Ui.tv(act, labels[i] + " " + values[i] + " · " + pct, 12f, Ui.SUB, false);
+            cell.addView(t);
+            row.addView(cell, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        return wrap;
     }
 }
