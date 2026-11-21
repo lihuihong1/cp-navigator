@@ -26,7 +26,9 @@ final class PageContests {
     private final Prefs prefs;
 
     final LinearLayout view;
-    private final TextView subtitle;
+    private final TextView dateValue;
+    private final TextView srcValue;
+    private final TextView countLine;
     private final LinearLayout body;
     private final TextView btnQuery;
     private final TextView tabOj;
@@ -113,9 +115,28 @@ final class PageContests {
         modeRow.addView(btnSrc);
         head.addView(modeRow);
 
-        subtitle = Ui.tv(act, "", 12f, Ui.SUB, false);
-        subtitle.setPadding(0, Ui.dp(act, 8), 0, 0);
-        head.addView(subtitle);
+        // 第三块：日期、平台分两行显示；查询后再补一行「共 N 场 · HH:mm:ss 查询」
+        LinearLayout info = Ui.col(act);
+        LinearLayout.LayoutParams infoLp = Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        infoLp.topMargin = Ui.dp(act, 8);
+        info.setLayoutParams(infoLp);
+
+        dateValue = Ui.tv(act, M.windowText(), 11.5f, Ui.withAlpha(Ui.TEXT, 184), false);
+        info.addView(infoRow("日期", dateValue));
+
+        srcValue = Ui.tv(act, srcNames(), 11.5f, Ui.withAlpha(Ui.TEXT, 184), false);
+        LinearLayout.LayoutParams srcLp = Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        srcLp.topMargin = Ui.dp(act, 3);
+        info.addView(infoRow("平台", srcValue), srcLp);
+
+        countLine = Ui.tv(act, "", 11.5f, Ui.SUB, false);
+        countLine.setVisibility(View.GONE);
+        countLine.setPadding(0, Ui.dp(act, 3), 0, 0);
+        info.addView(countLine);
+
+        head.addView(info);
         view.addView(head);
         view.addView(Ui.divider(act));
 
@@ -130,6 +151,17 @@ final class PageContests {
 
         styleTabs();
         updateSrcText();
+    }
+
+    private LinearLayout infoRow(String label, TextView value) {
+        LinearLayout r = Ui.row(act);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams lpl = Ui.lp(LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lpl.rightMargin = Ui.dp(act, 6);
+        r.addView(Ui.tv(act, label, 11.5f, Ui.SUB, false), lpl);
+        r.addView(value, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        return r;
     }
 
     private TextView modeTab(String text) {
@@ -177,6 +209,7 @@ final class PageContests {
     private void updateSrcText() {
         Set<String> en = prefs.enabled();
         btnSrc.setText("平台 " + en.size() + "/" + M.ALL_CONTEST.length);
+        if (srcValue != null) srcValue.setText(srcNames());
     }
 
     /** 当前启用的源，保持固定展示顺序。 */
@@ -199,7 +232,9 @@ final class PageContests {
 
     private void intro() {
         body.removeAllViews();
-        subtitle.setText(M.windowText() + " · " + srcNames());
+        dateValue.setText(M.windowText());
+        srcValue.setText(srcNames());
+        countLine.setVisibility(View.GONE);
 
         LinearLayout card = Ui.card(act, 20);
         LinearLayout.LayoutParams lp = Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT,
@@ -207,12 +242,11 @@ final class PageContests {
         lp.bottomMargin = Ui.dp(act, 10);
         card.setLayoutParams(lp);
 
-        TextView t = Ui.tv(act, "点右上角「查询」", 15f, Ui.TEXT, true);
+        TextView t = Ui.tv(act, "暂无比赛信息", 15f, Ui.TEXT, true);
         t.setGravity(Gravity.CENTER);
         card.addView(t);
 
-        TextView s = Ui.tv(act, "会实时访问 " + srcNames() + " 的公开页面，\n列出 "
-                + M.windowText() + " 之间未开始和正在进行的比赛。", 12f, Ui.SUB, false);
+        TextView s = Ui.tv(act, "请点击右上角「查询」获取比赛信息。", 12f, Ui.SUB, false);
         s.setGravity(Gravity.CENTER);
         s.setPadding(0, Ui.dp(act, 6), 0, 0);
         s.setLineSpacing(Ui.dp(act, 3), 1f);
@@ -240,7 +274,8 @@ final class PageContests {
         final int my = ++seq;
         btnQuery.setText("查询中");
         btnQuery.setTextColor(Ui.SUB);
-        subtitle.setText("正在查询 " + src.size() + " 个源…");
+        countLine.setText("正在查询 " + src.size() + " 个源…");
+        countLine.setVisibility(View.VISIBLE);
 
         body.removeAllViews();
         for (String oj : src) body.addView(skeleton(oj));
@@ -316,8 +351,11 @@ final class PageContests {
         }
 
         String stamp = new SimpleDateFormat("HH:mm:ss").format(new Date(at));
-        subtitle.setText("共 " + total + " 场" + (bad > 0 ? "（" + bad + " 个源失败）" : "")
-                + " · " + M.windowText() + " · " + stamp + " 查询");
+        dateValue.setText(M.windowText());
+        srcValue.setText(srcNames());
+        countLine.setText("共 " + total + " 场" + (bad > 0 ? "（" + bad + " 个源失败）" : "")
+                + " · " + stamp + " 查询");
+        countLine.setVisibility(View.VISIBLE);
         body.addView(staleTip(at, now));
 
         if (total == 0) body.addView(emptyCard("未来 7 天还没有已公布的比赛"));
@@ -397,8 +435,11 @@ final class PageContests {
         }
 
         String stamp = new SimpleDateFormat("HH:mm:ss").format(new Date(at));
-        subtitle.setText("共 " + all.size() + " 场" + (bad.isEmpty() ? "" : "（" + bad.size()
-                + " 个源失败）") + " · " + M.windowText() + " · " + stamp + " 查询");
+        dateValue.setText(M.windowText());
+        srcValue.setText(srcNames());
+        countLine.setText("共 " + all.size() + " 场" + (bad.isEmpty() ? "" : "（" + bad.size()
+                + " 个源失败）") + " · " + stamp + " 查询");
+        countLine.setVisibility(View.VISIBLE);
         body.addView(staleTip(at, now));
 
         long today = M.startOfToday();

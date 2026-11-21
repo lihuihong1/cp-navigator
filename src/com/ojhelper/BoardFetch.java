@@ -22,6 +22,8 @@ final class BoardFetch {
 
     static final String RANKLAND = "https://rl.algoux.cn";
     static final String XCPCIO = "https://board.xcpcio.com/";
+    static final String ICCPC = "https://rank.iccpc.cn/";
+    static final String CPCFINDER = "https://cpcfinder.com/";
 
     private BoardFetch() {
     }

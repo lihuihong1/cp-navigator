@@ -6,7 +6,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-/** 榜单页：只有两个榜单站点入口（XCPCIO / RankLand），点开用应用内 WebView 看。 */
+/** 榜单页：四个榜单站点入口（XCPCIO / RankLand / CCPC 外榜 / CPC Finder），点开用应用内 WebView 看。 */
 final class PageBoards {
 
     private final MainActivity act;
@@ -51,6 +51,20 @@ final class PageBoards {
 
         body.addView(card("RankLand", "400+ 赛事榜单合集",
                 BoardFetch.RANKLAND, "RankLand"));
+
+        LinearLayout gap2 = Ui.col(act);
+        gap2.setPadding(0, Ui.dp(act, 10), 0, 0);
+        body.addView(gap2);
+
+        body.addView(card("CCPC 外榜", "ICPC / CCPC 校外榜单（Outrank）",
+                BoardFetch.ICCPC, "CCPC 外榜"));
+
+        LinearLayout gap3 = Ui.col(act);
+        gap3.setPadding(0, Ui.dp(act, 10), 0, 0);
+        body.addView(gap3);
+
+        body.addView(card("CPC Finder", "程序设计竞赛选手成绩查询",
+                BoardFetch.CPCFINDER, "CPC Finder"));
 
         TextView tip = Ui.tv(act, "XCPCIO 单场榜单较重，慢时可点右上角「浏览器」。",
                 11.5f, Ui.SUB, false);
