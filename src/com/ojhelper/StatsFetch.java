@@ -52,6 +52,27 @@ final class StatsFetch {
         }
     }
 
+    // ---------------- ojhunt：第三方聚合，一次请求直出解题数 ----------------
+
+    /**
+     * 从 ojhunt 取解题数。成功返回 >=0；任何异常 / error:true / 没有 solved 都返回 -1，
+     * 由调用方回退到各自的原始抓取逻辑 —— 这个服务挂了不能影响整体查询。
+     */
+    private static int ojhunt(String oj, String h) {
+        try {
+            String body = Net.get("https://ojhunt.com/api/crawlers/" + oj + "/" + enc(h),
+                    "https://ojhunt.com/");
+            JSONObject o = new JSONObject(body);
+            if (o.optBoolean("error", false)) return -1;
+            JSONObject data = o.optJSONObject("data");
+            if (data == null || !data.has("solved")) return -1;
+            int n = data.optInt("solved", -1);
+            return n < 0 ? -1 : n;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
     // ---------------- Codeforces ----------------
 
     private static M.Stat cf(String h) throws M.OjError {
@@ -83,7 +104,15 @@ final class StatsFetch {
         }
         s.extra = ex.toString();
 
-        // 解题数：拉取全部提交后按题目去重。CF 限流 1 次 / 2 秒。
+        // 解题数：优先 ojhunt（一次请求，几百毫秒）；拿不到再回退到拉全量提交流程。
+        // 原流程对活跃号要请求 2–5 页、页间 sleep 2.1 秒，是「我的」页最慢的一项。
+        int fast = ojhunt("codeforces", h);
+        if (fast >= 0) {
+            s.solved = Integer.valueOf(fast);
+            return s;
+        }
+
+        // 回退：拉取全部提交后按题目去重。CF 限流 1 次 / 2 秒。
         sleep(2100);
         Set<String> solved = new HashSet<String>();
         int from = 1;
@@ -300,7 +329,10 @@ final class StatsFetch {
                     .matcher(pre);
             if (rm.find()) s.extra = "Rating 排名 " + rm.group(1);
         }
-        // 牛客个人主页不公开解题数，保持为空
+        // 牛客个人主页不公开解题数（页面里没有 AC 统计），只能借 ojhunt 补；
+        // 拿不到就留空，不影响 rating 的展示。
+        int fast = ojhunt("nowcoder", h);
+        if (fast >= 0) s.solved = Integer.valueOf(fast);
         return s;
     }
 
@@ -309,12 +341,41 @@ final class StatsFetch {
     private static M.Stat vjudge(String h) throws M.OjError {
         M.Stat s = M.Stat.of(M.VJ);
         String body = Net.get("https://vjudge.net/user/" + enc(h), "https://vjudge.net/");
-        if (body.contains("profile-stat-strip")) {
-            // 页面存在；解题统计由前端 JS 二次请求，没有公开接口
-            s.extra = "该站未提供公开统计接口";
-            return s;
+        // 解题数不在 HTML 表格里（probRecords 是空壳，行由前端 JS 填充），
+        // 但站点把统计数字内嵌成了 <script type="application/json" id="profile-header-data">
+        // 形如 {"username":"…","counts":{"ac7d":0,"acAll":97,"ac30d":0,"attAll":102},"ranks":{"all":67701}}
+        String json = null;
+        int a = body.indexOf("id=\"profile-header-data\"");
+        if (a >= 0) {
+            int b = body.indexOf('>', a);
+            int c = b < 0 ? -1 : body.indexOf("</script>", b);
+            if (b > 0 && c > b) json = body.substring(b + 1, c).trim();
         }
-        throw new M.OjError(M.Err.NOT_FOUND, "用户名不存在");
+        if (json == null || json.isEmpty()) {
+            // 页面还在（说明站点没改版到认不出用户），但没有那段 JSON —— 多半是改版
+            if (body.contains("profile-stat-strip") || body.contains("probRecords")) {
+                throw new M.OjError(M.Err.BROKEN, "VJudge 页面结构已变，读不到统计数据");
+            }
+            throw new M.OjError(M.Err.NOT_FOUND, "用户名不存在");
+        }
+        try {
+            JSONObject o = new JSONObject(json);
+            JSONObject counts = o.optJSONObject("counts");
+            if (counts == null || !counts.has("acAll")) {
+                throw new M.OjError(M.Err.NOT_FOUND, "用户名不存在");
+            }
+            s.solved = counts.optInt("acAll", 0);
+            JSONObject ranks = o.optJSONObject("ranks");
+            if (ranks != null && ranks.has("all")) {
+                // VJudge 没有 rating，只在 extra 里报个总排名
+                s.extra = "排名 " + ranks.optInt("all");
+            }
+        } catch (M.OjError e) {
+            throw e;
+        } catch (Exception e) {
+            throw new M.OjError(M.Err.BROKEN, "无法解析 VJudge 统计");
+        }
+        return s;
     }
 
     // ---------------- HDU ----------------
@@ -328,7 +389,12 @@ final class StatsFetch {
         if (ms.find()) s.solved = Integer.valueOf(Net.toInt(ms.group(1), 0));
         Matcher mr = Pattern.compile("<td>Rank</td>\\s*<td[^>]*>(\\d+)</td>").matcher(body);
         if (mr.find()) s.extra = "排名 " + mr.group(1);
-        if (s.solved == null) throw new M.OjError(M.Err.BROKEN, "页面结构变化");
+        if (s.solved == null) {
+            // 页面结构变了 / 老账号显示不同：再试一次 ojhunt，仍拿不到才报接口失效
+            int fast = ojhunt("hdu", h);
+            if (fast >= 0) s.solved = Integer.valueOf(fast);
+            else throw new M.OjError(M.Err.BROKEN, "页面结构变化");
+        }
         return s;
     }
 }

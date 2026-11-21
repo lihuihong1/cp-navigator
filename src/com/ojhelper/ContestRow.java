@@ -117,6 +117,32 @@ final class ContestRow {
         });
         row.addView(star);
 
+        // 铃铛：开赛提醒（已设置时变蓝）
+        final ImageView bell = new ImageView(act);
+        final int on = R.drawable.ic_bell_on;
+        final int off = R.drawable.ic_bell_off;
+        bell.setImageResource(store.remindLead(ct.key()) >= 0 ? on : off);
+        track(ct.key(), bell);
+        bell.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        bell.setContentDescription("开赛提醒");
+        LinearLayout.LayoutParams bp = Ui.lp(Ui.dp(act, 22), Ui.dp(act, 22));
+        bp.leftMargin = Ui.dp(act, 6);
+        bp.gravity = android.view.Gravity.CENTER_VERTICAL;
+        bell.setLayoutParams(bp);
+        final Runnable syncBell = new Runnable() {
+            @Override
+            public void run() {
+                bell.setImageResource(store.remindLead(ct.key()) >= 0 ? on : off);
+            }
+        };
+        bell.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Reminder.pick(act, store, ct, syncBell);
+            }
+        });
+        row.addView(bell);
+
         final TextView cal = Ui.tv(act, "日历", 12f, Ui.ACCENT, true);
         cal.setBackground(Ui.stroke(0x00000000, Ui.ACCENT, 7, 1, act));
         cal.setPadding(Ui.dp(act, 8), Ui.dp(act, 4), Ui.dp(act, 8), Ui.dp(act, 4));
@@ -133,6 +159,30 @@ final class ContestRow {
         row.addView(cal, cp);
 
         return row;
+    }
+
+    // ---------------- 铃铛状态同步 ----------------
+    // 提醒响过之后库里那条会被删掉，但屏幕上已经画好的铃铛不会自己变。
+    // 这里登记每一行的铃铛，回到前台时统一按库里的状态刷一遍（不重建列表、不丢滚动位置）。
+
+    private static final java.util.List<Object[]> BELLS = new java.util.ArrayList<Object[]>();
+
+    private static void track(String key, ImageView bell) {
+        // 顺手清掉已经被回收的旧条目，避免越攒越多
+        for (int i = BELLS.size() - 1; i >= 0; i--) {
+            if (((java.lang.ref.WeakReference<?>) BELLS.get(i)[1]).get() == null) BELLS.remove(i);
+        }
+        BELLS.add(new Object[]{key, new java.lang.ref.WeakReference<ImageView>(bell)});
+    }
+
+    static void syncBells(Store store) {
+        for (int i = 0; i < BELLS.size(); i++) {
+            Object[] o = BELLS.get(i);
+            ImageView v = (ImageView) ((java.lang.ref.WeakReference<?>) o[1]).get();
+            if (v == null) continue;
+            boolean on = store.remindLead((String) o[0]) >= 0;
+            v.setImageResource(on ? R.drawable.ic_bell_on : R.drawable.ic_bell_off);
+        }
     }
 
     /** 点比赛先确认，避免误触跳走。 */

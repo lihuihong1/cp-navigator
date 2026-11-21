@@ -29,6 +29,18 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         Net.init();
         store = new Store(this);
+        Notif.init(this);
+        // 系统可能清掉过已排的闹钟（重启/升级/清缓存），启动时补排一次
+        final Store st = store;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Reminder.resync(MainActivity.this, st);
+                } catch (Exception ignored) {
+                }
+            }
+        }).start();
 
         if (Build.VERSION.SDK_INT >= 21) {
             getWindow().setStatusBarColor(Ui.CARD);
@@ -118,6 +130,25 @@ public class MainActivity extends Activity {
             return true;
         }
         return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 从「闹钟和提醒」设置页回来：如果已授权，把刚才那次设置续上
+        if (store != null) {
+            Reminder.onResume(this, store);
+            // 提醒可能在这期间响过（库里的记录已删），把屏幕上的铃铛同步成未设置
+            ContestRow.syncBells(store);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] perms, int[] grant) {
+        super.onRequestPermissionsResult(code, perms, grant);
+        if (code == Reminder.REQ_NOTIF) {
+            Reminder.onNotifResult(this, grant.length > 0 && grant[0] == 0);
+        }
     }
 
     @Override

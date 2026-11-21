@@ -11,8 +11,10 @@ final class Cal {
     private Cal() {}
 
     static void add(Context c, M.Contest ct) {
-        if (ct.finished(System.currentTimeMillis())) {
-            Ui.toast(c, "比赛已结束，无需添加日历");
+        long now = System.currentTimeMillis();
+        if (ct.start <= now) {
+            // 只允许给"还没开始"的比赛加日历：已开始/已结束的加了也没有提醒意义
+            Ui.toast(c, ct.finished(now) ? "比赛已结束，无法添加日历" : "比赛已开始，无法添加日历");
             return;
         }
         Intent i = new Intent(Intent.ACTION_INSERT);

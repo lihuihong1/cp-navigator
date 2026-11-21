@@ -13,7 +13,18 @@ import java.util.List;
 final class Store extends SQLiteOpenHelper {
 
     private static final String DB = "oj.db";
-    private static final int VER = 1;
+    private static final int VER = 2;
+
+    private static final String CREATE_REMIND = "CREATE TABLE remind ("
+            + "key TEXT PRIMARY KEY,"
+            + "oj TEXT NOT NULL,"
+            + "sid TEXT NOT NULL,"
+            + "title TEXT NOT NULL,"
+            + "start INTEGER NOT NULL,"
+            + "end INTEGER NOT NULL,"
+            + "url TEXT NOT NULL,"
+            + "lead INTEGER NOT NULL,"
+            + "at INTEGER NOT NULL)";
 
     static final class Acc {
         String oj = "";
@@ -48,12 +59,17 @@ final class Store extends SQLiteOpenHelper {
                 + "extra TEXT NOT NULL DEFAULT '',"
                 + "updated INTEGER NOT NULL DEFAULT 0,"
                 + "last_error TEXT NOT NULL DEFAULT '')");
+        db.execSQL(CREATE_REMIND);
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldV, int newV) {
-        // 第一版没有历史迁移；后续版本必须在此按 oldV 逐级 ALTER，禁止 drop
-        if (oldV < 1) onCreate(db);
+        // 按 oldV 逐级迁移，禁止 drop（drop 会让用户升级后丢收藏与成绩）
+        if (oldV < 1) {
+            onCreate(db);
+            return;
+        }
+        if (oldV < 2) db.execSQL(CREATE_REMIND);
     }
 
     // ---------------- 收藏 ----------------
@@ -147,9 +163,69 @@ final class Store extends SQLiteOpenHelper {
         getWritableDatabase().insertWithOnConflict("acc", null, v, SQLiteDatabase.CONFLICT_REPLACE);
     }
 
+    // ---------------- 开赛提醒 ----------------
+
+    static final class Rem {
+        final M.Contest c = new M.Contest();
+        int lead;
+        long at;
+    }
+
+    void putRemind(M.Contest c, int lead, long at) {
+        ContentValues v = new ContentValues();
+        v.put("key", c.key());
+        v.put("oj", c.oj);
+        v.put("sid", c.sid);
+        v.put("title", c.title);
+        v.put("start", c.start);
+        v.put("end", c.end);
+        v.put("url", c.url);
+        v.put("lead", lead);
+        v.put("at", at);
+        getWritableDatabase().insertWithOnConflict("remind", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    void deleteRemind(String key) {
+        getWritableDatabase().delete("remind", "key=?", new String[]{key});
+    }
+
+    /** 已设置的提前分钟数；没有返回 -1。 */
+    int remindLead(String key) {
+        Cursor c = getReadableDatabase().rawQuery("SELECT lead FROM remind WHERE key=?", new String[]{key});
+        try {
+            return c.moveToFirst() ? c.getInt(0) : -1;
+        } finally {
+            c.close();
+        }
+    }
+
+    List<Rem> reminds() {
+        List<Rem> out = new ArrayList<Rem>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT oj,sid,title,start,end,url,lead,at FROM remind ORDER BY at", null);
+        try {
+            while (c.moveToNext()) {
+                Rem r = new Rem();
+                r.c.oj = c.getString(0);
+                r.c.sid = c.getString(1);
+                r.c.title = c.getString(2);
+                r.c.start = c.getLong(3);
+                r.c.end = c.getLong(4);
+                r.c.url = c.getString(5);
+                r.lead = c.getInt(6);
+                r.at = c.getLong(7);
+                out.add(r);
+            }
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
     void clearAll() {
         SQLiteDatabase db = getWritableDatabase();
         db.delete("fav", null, null);
         db.delete("acc", null, null);
+        db.delete("remind", null, null);
     }
 }

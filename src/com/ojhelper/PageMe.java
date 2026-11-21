@@ -304,6 +304,7 @@ final class PageMe {
                 .setPositiveButton("清空", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface d, int which) {
+                        Reminder.cancelAll(act, store);
                         store.clearAll();
                         for (Row r : rows) {
                             r.input.setText("");
