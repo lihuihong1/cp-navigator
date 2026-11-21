@@ -10,7 +10,9 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 
-/** 比赛页：每次进入都重新抓取，结果不落盘。 */
+/**
+ * 比赛页：进入页面不自动查询，必须点右上角「查询」；结果只留在内存，不落盘。
+ */
 final class PageContests {
 
     private final MainActivity act;
@@ -23,6 +25,10 @@ final class PageContests {
 
     private boolean busy;
     private int seq;
+
+    /** 上次查询结果（仅内存），null 表示本进程还没查过。 */
+    private List<ContestFetch.Result> last;
+    private long lastAt;
 
     PageContests(MainActivity a, Store s) {
         act = a;
@@ -39,9 +45,9 @@ final class PageContests {
         TextView title = Ui.tv(act, "近期比赛", 21f, Ui.TEXT, true);
         titleRow.addView(title, Ui.lp(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        btnRefresh = Ui.tv(act, "刷新", 13f, Ui.ACCENT, true);
+        btnRefresh = Ui.tv(act, "查询", 13f, Ui.ACCENT, true);
         btnRefresh.setBackground(Ui.stroke(0x00000000, Ui.ACCENT, 8, 1, act));
-        btnRefresh.setPadding(Ui.dp(act, 12), Ui.dp(act, 5), Ui.dp(act, 12), Ui.dp(act, 5));
+        btnRefresh.setPadding(Ui.dp(act, 14), Ui.dp(act, 5), Ui.dp(act, 14), Ui.dp(act, 5));
         btnRefresh.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -67,8 +73,42 @@ final class PageContests {
         view.addView(sv, Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
     }
 
+    /** 进入页面：不联网。有上次结果就重新显示（带时间戳），否则显示引导。 */
     void onShow() {
-        refresh();
+        if (busy || last == null) {
+            if (!busy) intro();
+            return;
+        }
+        render(last, lastAt);
+    }
+
+    private void intro() {
+        body.removeAllViews();
+        subtitle.setText(M.windowText() + " · 牛客 / 力扣 / CF / 洛谷");
+
+        LinearLayout card = Ui.card(act, 20);
+        LinearLayout.LayoutParams lp = Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = Ui.dp(act, 10);
+        card.setLayoutParams(lp);
+
+        TextView t = Ui.tv(act, "点右上角「查询」", 15f, Ui.TEXT, true);
+        t.setGravity(Gravity.CENTER);
+        card.addView(t);
+
+        TextView s = Ui.tv(act, "会实时访问牛客、力扣、Codeforces、洛谷的公开页面，\n"
+                + "列出 " + M.windowText() + " 之间未开始和正在进行的比赛。", 12f, Ui.SUB, false);
+        s.setGravity(Gravity.CENTER);
+        s.setPadding(0, Ui.dp(act, 6), 0, 0);
+        s.setLineSpacing(Ui.dp(act, 3), 1f);
+        card.addView(s);
+
+        TextView n = Ui.tv(act, "查询结果不落盘，退出应用即清空；收藏和成绩另存本地。", 11f, Ui.SUB, false);
+        n.setGravity(Gravity.CENTER);
+        n.setPadding(0, Ui.dp(act, 10), 0, 0);
+        card.addView(n);
+
+        body.addView(card);
     }
 
     private void refresh() {
@@ -91,9 +131,11 @@ final class PageContests {
                     public void run() {
                         if (my != seq) return;
                         busy = false;
-                        btnRefresh.setText("刷新");
+                        btnRefresh.setText("查询");
                         btnRefresh.setTextColor(Ui.ACCENT);
-                        render(rs);
+                        last = rs;
+                        lastAt = System.currentTimeMillis();
+                        render(rs, lastAt);
                     }
                 });
             }
@@ -116,7 +158,7 @@ final class PageContests {
         return card;
     }
 
-    private void render(List<ContestFetch.Result> rs) {
+    private void render(List<ContestFetch.Result> rs, long at) {
         body.removeAllViews();
         long now = System.currentTimeMillis();
         int total = 0;
@@ -124,7 +166,23 @@ final class PageContests {
 
         SimpleDateFormat hm = M.fmt("HH:mm:ss");
         subtitle.setText("共 " + total + " 场 · " + M.windowText() + " · "
-                + hm.format(new Date()) + " 更新");
+                + hm.format(new Date(at)) + " 查询");
+
+        // 结果放久了给个提醒：比赛可能已经开始了
+        long ageMin = (now - at) / 60000L;
+        if (ageMin >= 15) {
+            LinearLayout tip = Ui.card(act, 10);
+            LinearLayout.LayoutParams tlp = Ui.lp(LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            tlp.bottomMargin = Ui.dp(act, 10);
+            tip.setLayoutParams(tlp);
+            String when = ageMin < 60 ? (ageMin + " 分钟") : (ageMin / 60 + " 小时");
+            TextView tv = Ui.tv(act, "这是 " + hm.format(new Date(at)) + " 的快照，已过 " + when
+                    + "，可能已经过期，点「查询」更新。", 11.5f, 0xFFB45309, false);
+            tv.setLineSpacing(Ui.dp(act, 2), 1f);
+            tip.addView(tv);
+            body.addView(tip);
+        }
 
         if (total == 0) {
             LinearLayout empty = Ui.card(act, 18);
@@ -135,7 +193,7 @@ final class PageContests {
             TextView t = Ui.tv(act, "未来 7 天还没有已公布的比赛", 14f, Ui.TEXT, true);
             t.setGravity(Gravity.CENTER);
             empty.addView(t);
-            TextView s = Ui.tv(act, "比赛通常提前 1~2 周公布，可以过几天再来看看", 12f, Ui.SUB, false);
+            TextView s = Ui.tv(act, "比赛通常提前 1~2 周公布，可以过几天再查一次", 12f, Ui.SUB, false);
             s.setGravity(Gravity.CENTER);
             s.setPadding(0, Ui.dp(act, 4), 0, 0);
             empty.addView(s);
@@ -147,7 +205,7 @@ final class PageContests {
         }
 
         TextView note = Ui.tv(act, "数据实时抓取自各站公开页面；站点改版可能导致某一路失效，"
-                + "此时可按「刷新」重试。", 11f, Ui.SUB, false);
+                + "此时可按「查询」重试。", 11f, Ui.SUB, false);
         note.setPadding(Ui.dp(act, 4), Ui.dp(act, 6), Ui.dp(act, 4), Ui.dp(act, 16));
         body.addView(note);
     }
