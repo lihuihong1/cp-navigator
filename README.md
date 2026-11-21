@@ -96,6 +96,7 @@ final class BuildStamp {
 
 | 版本 | 主要变化 |
 | --- | --- |
+| [v1.6.1](../../releases/tag/v1.6.1) | 修好开赛提醒通知标题：按提前量显示「比赛将在 N 分钟后开始」 |
 | [v1.6.0](../../releases/tag/v1.6.0) | 题解统计饼图 |
 | [v1.5.4](../../releases/tag/v1.5.4) | 开赛提醒；VJudge 解题数；CF / 牛客解题数改走 ojhunt |
 | [v1.4.0](../../releases/tag/v1.4.0) | 原生 ICPC 榜单（直连 XCPCIO 数据） |
