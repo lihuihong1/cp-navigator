@@ -1,0 +1,20 @@
+# 白名单：只放行源码与文档，其余一律忽略
+# （以后误放到仓库里的临时文件不会被 add 进来）
+*
+!/.gitignore
+!/.gitattributes
+!/LICENSE
+!/README.md
+!/AndroidManifest.xml
+!/src/
+!/src/**
+!/res/
+!/res/**
+
+# 构建产物与签名中间文件
+*.idsig
+*.apk
+*.jks
+*.keystore
+build/
+.gradle/
